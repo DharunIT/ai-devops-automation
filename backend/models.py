@@ -5,12 +5,14 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.preprocessing import StandardScaler
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'saved_models')
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 ANOMALY_MODEL_PATH = os.path.join(MODELS_DIR, 'anomaly_detector.joblib')
 FAILURE_MODEL_PATH = os.path.join(MODELS_DIR, 'failure_predictor.joblib')
+SCALER_PATH = os.path.join(MODELS_DIR, 'scaler.joblib')
 
 def generate_synthetic_data(num_samples=1000):
     """
@@ -82,22 +84,59 @@ def generate_synthetic_data(num_samples=1000):
 
 class MLManager:
     @staticmethod
+    def load_scaler():
+        if os.path.exists(SCALER_PATH):
+            return joblib.load(SCALER_PATH)
+        return None
+
+    @staticmethod
+    def preprocess_data(df, is_training=True):
+        """
+        Preprocesses the metrics dataset:
+        1. Imputes missing values with column medians.
+        2. Scales features using StandardScaler.
+        """
+        features = ['CPU_Usage', 'Memory_Usage', 'Disk_Usage', 'Network_Traffic', 'Response_Time']
+        
+        df_clean = df.copy()
+        for col in features:
+            if col in df_clean.columns:
+                median_val = df_clean[col].median()
+                df_clean[col] = df_clean[col].fillna(median_val)
+                
+        if is_training and 'Failure' in df_clean.columns:
+            df_clean['Failure'] = df_clean['Failure'].fillna(0)
+            
+        X = df_clean[features]
+        
+        if is_training:
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            joblib.dump(scaler, SCALER_PATH)
+            X_scaled_df = pd.DataFrame(X_scaled, columns=features)
+            return X_scaled_df, df_clean['Failure']
+        else:
+            scaler = MLManager.load_scaler()
+            if scaler:
+                X_scaled = scaler.transform(X)
+                return pd.DataFrame(X_scaled, columns=features)
+            return X
+
+    @staticmethod
     def train_models(df):
         """
         Trains both Isolation Forest (anomaly detection) and Random Forest (failure prediction).
         """
-        features = ['CPU_Usage', 'Memory_Usage', 'Disk_Usage', 'Network_Traffic', 'Response_Time']
-        X = df[features]
-        y = df['Failure']
+        X_scaled, y = MLManager.preprocess_data(df, is_training=True)
         
         # 1. Train Isolation Forest (Unsupervised, but we fit on normal-ish data or entire data)
         # We train on full dataset assuming contamination of ~15%
         iso_forest = IsolationForest(n_estimators=100, contamination=0.15, random_state=42)
-        iso_forest.fit(X)
+        iso_forest.fit(X_scaled)
         joblib.dump(iso_forest, ANOMALY_MODEL_PATH)
         
         # Predict anomalies (-1 = anomaly, 1 = normal)
-        anom_preds = iso_forest.predict(X)
+        anom_preds = iso_forest.predict(X_scaled)
         anom_binary = np.where(anom_preds == -1, 1, 0)
         
         # Anomaly Detection performance (using 'Failure' label as pseudo-ground truth)
@@ -105,7 +144,7 @@ class MLManager:
         anom_f1 = f1_score(y, anom_binary)
         
         # 2. Train Random Forest Classifier
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
         rf_classifier = RandomForestClassifier(n_estimators=50, random_state=42)
         rf_classifier.fit(X_train, y_train)
         joblib.dump(rf_classifier, FAILURE_MODEL_PATH)
@@ -162,9 +201,16 @@ class MLManager:
             return is_anom, score
             
         metrics_df = pd.DataFrame([metrics], columns=['CPU_Usage', 'Memory_Usage', 'Disk_Usage', 'Network_Traffic', 'Response_Time'])
-        pred = model.predict(metrics_df)[0]
+        
+        scaler = MLManager.load_scaler()
+        if scaler:
+            metrics_scaled = pd.DataFrame(scaler.transform(metrics_df), columns=metrics_df.columns)
+        else:
+            metrics_scaled = metrics_df
+            
+        pred = model.predict(metrics_scaled)[0]
         # decision_function returns negative values for anomalies, positive for normal
-        decision_score = model.decision_function(metrics_df)[0]
+        decision_score = model.decision_function(metrics_scaled)[0]
         # Normalize decision score to [0, 1] range (higher means more anomalous)
         # Decision function is typically in range [-0.5, 0.5]
         normalized_score = float(max(0, min(1, -decision_score + 0.5)))
@@ -202,7 +248,14 @@ class MLManager:
             return prob, risk, fail_type
             
         metrics_df = pd.DataFrame([metrics], columns=['CPU_Usage', 'Memory_Usage', 'Disk_Usage', 'Network_Traffic', 'Response_Time'])
-        prob = float(model.predict_proba(metrics_df)[0][1])
+        
+        scaler = MLManager.load_scaler()
+        if scaler:
+            metrics_scaled = pd.DataFrame(scaler.transform(metrics_df), columns=metrics_df.columns)
+        else:
+            metrics_scaled = metrics_df
+            
+        prob = float(model.predict_proba(metrics_scaled)[0][1])
         
         risk = 'Low'
         if prob > 0.8: risk = 'Critical'
