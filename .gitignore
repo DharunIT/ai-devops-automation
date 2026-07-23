@@ -43,3 +43,8 @@ ENV/bin/
 *.njsproj
 *.sln
 *.sw?
+
+# Machine Learning Artifacts & Models
+*.joblib
+artifacts/defect_outputs/data/
+
