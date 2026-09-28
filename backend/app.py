@@ -1,4 +1,9 @@
 import os
+import sys
+
+# Ensure workspace root is in sys.path when script is executed directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import io
 import numpy as np
 import pandas as pd
@@ -9,6 +14,8 @@ from sklearn.metrics import accuracy_score, f1_score
 from backend.database import db, MetricRecord, Incident, SelfHealingLog, MLModelStatus, MonitoredWebsite
 from backend.simulation import simulator
 from backend.models import MLManager, generate_synthetic_data
+from mlflow_config import init_mlflow, EXPERIMENT_DEVOPS, EXPERIMENT_DEFECT, EXPERIMENT_JM1, TRACKING_URI
+import mlflow
 
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
@@ -495,6 +502,81 @@ def update_speed():
         
     new_speed = simulator.set_speed(speed)
     return jsonify({"status": "success", "speed": new_speed})
+
+
+# MLflow Experiment Tracking Endpoints
+@app.route('/api/mlflow/runs', methods=['GET'])
+def get_mlflow_runs():
+    """Return all MLflow experiment runs with metrics, params, and metadata."""
+    try:
+        init_mlflow()
+        client = mlflow.tracking.MlflowClient(tracking_uri=TRACKING_URI)
+        
+        experiments_data = []
+        for exp_name in [EXPERIMENT_DEVOPS, EXPERIMENT_DEFECT, EXPERIMENT_JM1]:
+            exp = client.get_experiment_by_name(exp_name)
+            if not exp:
+                continue
+            
+            runs = client.search_runs(
+                experiment_ids=[exp.experiment_id],
+                order_by=["start_time DESC"],
+                max_results=50
+            )
+            
+            runs_list = []
+            for run in runs:
+                runs_list.append({
+                    "run_id": run.info.run_id,
+                    "run_name": run.info.run_name or run.data.tags.get("mlflow.runName", "Unnamed"),
+                    "status": run.info.status,
+                    "start_time": datetime.fromtimestamp(run.info.start_time / 1000).isoformat() if run.info.start_time else None,
+                    "end_time": datetime.fromtimestamp(run.info.end_time / 1000).isoformat() if run.info.end_time else None,
+                    "duration_ms": (run.info.end_time - run.info.start_time) if run.info.end_time and run.info.start_time else None,
+                    "metrics": dict(run.data.metrics),
+                    "params": dict(run.data.params),
+                    "tags": {k: v for k, v in run.data.tags.items() if not k.startswith("mlflow.")}
+                })
+            
+            experiments_data.append({
+                "experiment_id": exp.experiment_id,
+                "experiment_name": exp_name,
+                "lifecycle_stage": exp.lifecycle_stage,
+                "runs_count": len(runs_list),
+                "runs": runs_list
+            })
+        
+        return jsonify({
+            "experiments": experiments_data,
+            "tracking_uri": TRACKING_URI
+        })
+    except Exception as e:
+        return jsonify({"experiments": [], "error": str(e)})
+
+
+@app.route('/api/mlflow/train_all', methods=['POST'])
+def trigger_all_mlflow_trainings():
+    """Trigger execution of all ML pipeline trainings to generate fresh MLflow runs."""
+    try:
+        results = {}
+        df_devops = generate_synthetic_data()
+        devops_res = MLManager.train_models(df_devops)
+        results['devops'] = devops_res
+
+        import run_defect_pipeline
+        run_defect_pipeline.main()
+        results['defect'] = "Defect pipeline completed."
+
+        import jm1_model_training
+
+        return jsonify({
+            "status": "success",
+            "message": "All ML pipelines executed and logged to MLflow successfully.",
+            "details": results
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 # Helper seeding logic

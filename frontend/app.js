@@ -73,6 +73,15 @@ function App() {
     const [simSpeed, setSimSpeed] = useState(1.0);
     const [uploading, setUploading] = useState(false);
     
+    // Website monitoring state
+    const [websites, setWebsites] = useState([]);
+    const [newWebName, setNewWebName] = useState('');
+    const [newWebUrl, setNewWebUrl] = useState('');
+    const [addingWebsite, setAddingWebsite] = useState(false);
+    
+    // MLflow tracking state
+    const [mlflowRuns, setMlflowRuns] = useState(null);
+    
     // Dropdown filters for Incidents
     const [incSeverity, setIncSeverity] = useState('');
     const [incStatus, setIncStatus] = useState('');
@@ -133,8 +142,11 @@ function App() {
     useEffect(() => {
         if (activeTab === 'mlops') {
             fetch('/api/mlops').then(r => r.json()).then(setMlops);
+            fetch('/api/mlflow/runs').then(r => r.json()).then(setMlflowRuns).catch(() => {});
         } else if (activeTab === 'datasets') {
             fetch('/api/dataset/preview').then(r => r.json()).then(setDataset);
+        } else if (activeTab === 'websites') {
+            fetch('/api/websites').then(r => r.json()).then(setWebsites);
         }
     }, [activeTab]);
 
@@ -337,6 +349,41 @@ function App() {
             console.error("Dataset clear failed", e);
         }
     };
+    
+    const handleAddWebsite = async () => {
+        if (!newWebName.trim() || !newWebUrl.trim()) return;
+        setAddingWebsite(true);
+        try {
+            const res = await fetch('/api/websites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newWebName.trim(), url: newWebUrl.trim() })
+            }).then(r => r.json());
+            if (res.error) {
+                alert('Error: ' + res.error);
+            } else {
+                setNewWebName('');
+                setNewWebUrl('');
+                const updated = await fetch('/api/websites').then(r => r.json());
+                setWebsites(updated);
+            }
+        } catch (e) {
+            console.error('Add website failed', e);
+        } finally {
+            setAddingWebsite(false);
+        }
+    };
+    
+    const handleDeleteWebsite = async (id) => {
+        if (!confirm('Remove this monitored website?')) return;
+        try {
+            await fetch(`/api/websites/${id}`, { method: 'DELETE' });
+            const updated = await fetch('/api/websites').then(r => r.json());
+            setWebsites(updated);
+        } catch (e) {
+            console.error('Delete website failed', e);
+        }
+    };
 
     return (
         <div className="flex h-screen overflow-hidden">
@@ -366,7 +413,8 @@ function App() {
                             { id: 'incidents', label: 'Incidents Center', icon: 'fa-briefcase' },
                             { id: 'mlops', label: 'MLOps Dashboard', icon: 'fa-cogs' },
                             { id: 'cicd', label: 'CI/CD Pipeline', icon: 'fa-code-branch' },
-                            { id: 'datasets', label: 'Dataset Manager', icon: 'fa-database' }
+                            { id: 'datasets', label: 'Dataset Manager', icon: 'fa-database' },
+                            { id: 'websites', label: 'Website Monitor', icon: 'fa-globe' }
                         ].map((tab) => (
                             <button
                                 key={tab.id}
@@ -1015,6 +1063,121 @@ function App() {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* MLflow Experiment Tracker */}
+                            <div className="glass-panel p-5 rounded-xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h4 className="font-bold text-xs uppercase text-slate-400 tracking-wider mb-1 flex items-center gap-2">
+                                            <i className="fas fa-flask text-indigo-400" /> MLflow Experiment Tracker
+                                        </h4>
+                                        <p className="text-xs text-slate-500">All training runs tracked with hyperparameters, metrics, and model artifacts.</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => fetch('/api/mlflow/runs').then(r => r.json()).then(setMlflowRuns).catch(() => {})}
+                                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700/60 transition flex items-center gap-1.5"
+                                    >
+                                        <i className="fas fa-sync-alt" /> Refresh
+                                    </button>
+                                </div>
+
+                                {!mlflowRuns || !mlflowRuns.experiments || mlflowRuns.experiments.length === 0 ? (
+                                    <div className="text-center py-8">
+                                        <i className="fas fa-flask text-3xl text-slate-600 mb-3" />
+                                        <p className="text-slate-400 text-sm">No MLflow experiments found.</p>
+                                        <p className="text-slate-500 text-xs mt-1">Train models using the buttons above to create experiment runs.</p>
+                                        {mlflowRuns && mlflowRuns.error && (
+                                            <p className="text-amber-400/70 text-[10px] mt-2 font-mono">{mlflowRuns.error}</p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {mlflowRuns.experiments.map((exp) => (
+                                            <div key={exp.experiment_id} className="border border-slate-700/50 rounded-lg overflow-hidden">
+                                                <div className="bg-slate-900/60 px-4 py-2.5 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <i className="fas fa-folder-open text-indigo-400 text-xs" />
+                                                        <span className="text-xs font-bold text-white">{exp.experiment_name}</span>
+                                                        <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                                                            {exp.runs_count} run{exp.runs_count !== 1 ? 's' : ''}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[9px] text-slate-500 font-mono">ID: {exp.experiment_id}</span>
+                                                </div>
+                                                
+                                                {exp.runs.length > 0 ? (
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full text-left text-[10px]">
+                                                            <thead>
+                                                                <tr className="border-b border-slate-800 text-slate-500 uppercase">
+                                                                    <th className="px-4 py-2 font-bold">Run Name</th>
+                                                                    <th className="px-4 py-2 font-bold">Status</th>
+                                                                    <th className="px-4 py-2 font-bold">Metrics</th>
+                                                                    <th className="px-4 py-2 font-bold">Params</th>
+                                                                    <th className="px-4 py-2 font-bold">Duration</th>
+                                                                    <th className="px-4 py-2 font-bold">Started</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {exp.runs.map((run) => (
+                                                                    <tr key={run.run_id} className="border-b border-slate-800/40 hover:bg-slate-800/30 transition-colors">
+                                                                        <td className="px-4 py-2.5">
+                                                                            <div className="font-semibold text-white text-xs">{run.run_name}</div>
+                                                                            <div className="text-[8px] text-slate-500 font-mono mt-0.5">{run.run_id.slice(0, 12)}...</div>
+                                                                        </td>
+                                                                        <td className="px-4 py-2.5">
+                                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                                                                run.status === 'FINISHED' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                                                run.status === 'RUNNING' ? 'bg-cyan-500/20 text-cyan-400' :
+                                                                                run.status === 'FAILED' ? 'bg-rose-500/20 text-rose-400' :
+                                                                                'bg-slate-700 text-slate-400'
+                                                                            }`}>{run.status}</span>
+                                                                        </td>
+                                                                        <td className="px-4 py-2.5">
+                                                                            <div className="space-y-0.5 font-mono">
+                                                                                {Object.entries(run.metrics).slice(0, 4).map(([k, v]) => (
+                                                                                    <div key={k} className="flex items-center gap-1">
+                                                                                        <span className="text-slate-500">{k}:</span>
+                                                                                        <span className="text-cyan-300 font-bold">{typeof v === 'number' ? (v < 1 ? (v * 100).toFixed(2) + '%' : v.toFixed(4)) : v}</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                                {Object.keys(run.metrics).length > 4 && (
+                                                                                    <span className="text-slate-500">+{Object.keys(run.metrics).length - 4} more</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-2.5">
+                                                                            <div className="space-y-0.5 font-mono">
+                                                                                {Object.entries(run.params).slice(0, 3).map(([k, v]) => (
+                                                                                    <div key={k} className="flex items-center gap-1">
+                                                                                        <span className="text-slate-500">{k}:</span>
+                                                                                        <span className="text-amber-300">{v}</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                                {Object.keys(run.params).length > 3 && (
+                                                                                    <span className="text-slate-500">+{Object.keys(run.params).length - 3} more</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-2.5 text-slate-300 font-mono">
+                                                                            {run.duration_ms ? (run.duration_ms / 1000).toFixed(1) + 's' : '\u2014'}
+                                                                        </td>
+                                                                        <td className="px-4 py-2.5 text-slate-400 font-mono">
+                                                                            {run.start_time ? formatTime(run.start_time) : '\u2014'}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                ) : (
+                                                    <div className="px-4 py-4 text-xs text-slate-500">No runs recorded yet.</div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -1233,6 +1396,140 @@ function App() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    )}
+                    
+                    {/* 11. WEBSITE MONITORING TAB */}
+                    {activeTab === 'websites' && (
+                        <div className="space-y-6 animate-fadeIn">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-xl font-bold flex items-center gap-2">
+                                    <i className="fas fa-globe text-cyan-400" /> Website Monitoring
+                                </h2>
+                                <span className="text-xs text-slate-400">
+                                    {websites.length} site{websites.length !== 1 ? 's' : ''} monitored
+                                </span>
+                            </div>
+
+                            {/* Add Website Form */}
+                            <div className="glass-panel p-5 rounded-xl border border-slate-700/50">
+                                <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                                    <i className="fas fa-plus-circle text-cyan-400" /> Add Website to Monitor
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5">Display Name</label>
+                                        <input 
+                                            type="text" 
+                                            value={newWebName} 
+                                            onChange={(e) => setNewWebName(e.target.value)} 
+                                            placeholder="e.g. Google"
+                                            className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5">URL</label>
+                                        <input 
+                                            type="text" 
+                                            value={newWebUrl} 
+                                            onChange={(e) => setNewWebUrl(e.target.value)} 
+                                            placeholder="e.g. https://google.com"
+                                            className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        <button 
+                                            onClick={handleAddWebsite}
+                                            disabled={addingWebsite || !newWebName.trim() || !newWebUrl.trim()}
+                                            className="w-full bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-semibold text-sm px-4 py-2 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/10"
+                                        >
+                                            {addingWebsite ? (
+                                                <span className="flex items-center justify-center gap-2"><i className="fas fa-spinner animate-spin" /> Adding...</span>
+                                            ) : (
+                                                <span className="flex items-center justify-center gap-2"><i className="fas fa-satellite-dish" /> Start Monitoring</span>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                                <p className="mt-2 text-[10px] text-slate-500">The simulator will ping this URL every 2 seconds and track response time, uptime status, and metrics.</p>
+                            </div>
+
+                            {/* Monitored Websites List */}
+                            {websites.length === 0 ? (
+                                <div className="glass-panel p-10 rounded-xl text-center">
+                                    <i className="fas fa-globe text-4xl text-slate-600 mb-3" />
+                                    <p className="text-slate-400 text-sm">No websites being monitored yet.</p>
+                                    <p className="text-slate-500 text-xs mt-1">Add a URL above to start real-time monitoring.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {websites.map((w) => {
+                                        const serverKey = `Web-${w.name}`;
+                                        const serverMetrics = metrics && metrics.current ? metrics.current[serverKey] : null;
+                                        const isHealthy = serverMetrics ? serverMetrics.status === 'Healthy' : false;
+                                        
+                                        return (
+                                            <div key={w.id} className={`glass-panel p-4 rounded-xl border transition-all ${
+                                                isHealthy ? 'border-emerald-500/30' : (serverMetrics ? 'border-rose-500/30' : 'border-slate-700/50')
+                                            }`}>
+                                                <div className="flex items-start justify-between mb-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-3 h-3 rounded-full ${
+                                                            isHealthy ? 'bg-emerald-500 animate-pulse' : (serverMetrics ? 'bg-rose-500 animate-pulse' : 'bg-slate-600')
+                                                        }`} />
+                                                        <h4 className="text-sm font-bold text-white">{w.name}</h4>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleDeleteWebsite(w.id)}
+                                                        className="text-slate-500 hover:text-rose-400 transition-colors text-xs"
+                                                        title="Remove monitor"
+                                                    >
+                                                        <i className="fas fa-trash" />
+                                                    </button>
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 truncate mb-3 font-mono" title={w.url}>{w.url}</p>
+                                                
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                                                        isHealthy 
+                                                            ? 'bg-emerald-500/20 text-emerald-300' 
+                                                            : (serverMetrics ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-700 text-slate-400')
+                                                    }`}>
+                                                        {isHealthy ? 'Online' : (serverMetrics ? 'Down / Degraded' : 'Initializing...')}
+                                                    </span>
+                                                </div>
+                                                
+                                                {serverMetrics && (
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between text-[10px]">
+                                                            <span className="text-slate-400">Response Time</span>
+                                                            <span className={`font-mono font-bold ${
+                                                                serverMetrics.resp < 300 ? 'text-emerald-400' : 
+                                                                serverMetrics.resp < 1000 ? 'text-amber-400' : 'text-rose-400'
+                                                            }`}>{serverMetrics.resp.toFixed(0)}ms</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-[10px]">
+                                                            <span className="text-slate-400">CPU</span>
+                                                            <span className="font-mono text-cyan-400">{serverMetrics.cpu.toFixed(1)}%</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-[10px]">
+                                                            <span className="text-slate-400">Memory</span>
+                                                            <span className="font-mono text-indigo-400">{serverMetrics.mem.toFixed(1)}%</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-[10px]">
+                                                            <span className="text-slate-400">Network</span>
+                                                            <span className="font-mono text-slate-300">{serverMetrics.net.toFixed(1)} MB/s</span>
+                                                        </div>
+                                                        <div className="text-[9px] text-slate-500 mt-1">
+                                                            Added: {new Date(w.added_at).toLocaleString()}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
                 </main>

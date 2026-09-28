@@ -48,3 +48,7 @@ ENV/bin/
 *.joblib
 artifacts/defect_outputs/data/
 
+# MLflow
+mlruns/
+mlartifacts/
+

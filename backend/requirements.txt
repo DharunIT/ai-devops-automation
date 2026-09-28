@@ -5,3 +5,4 @@ Flask-Cors
 Flask-SQLAlchemy
 joblib
 numpy
+mlflow

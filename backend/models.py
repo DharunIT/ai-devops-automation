@@ -1,4 +1,5 @@
 import os
+import sys
 import joblib
 import numpy as np
 import pandas as pd
@@ -6,6 +7,11 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
+
+# MLflow integration
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from mlflow_config import mlflow_run, log_sklearn_model, EXPERIMENT_DEVOPS
+import mlflow
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'saved_models')
 os.makedirs(MODELS_DIR, exist_ok=True)
@@ -126,36 +132,55 @@ class MLManager:
     def train_models(df):
         """
         Trains both Isolation Forest (anomaly detection) and Random Forest (failure prediction).
+        All hyperparameters, metrics, and models are logged to MLflow.
         """
         X_scaled, y = MLManager.preprocess_data(df, is_training=True)
-        
-        # 1. Train Isolation Forest (Unsupervised, but we fit on normal-ish data or entire data)
-        # We train on full dataset assuming contamination of ~15%
-        iso_forest = IsolationForest(n_estimators=100, contamination=0.15, random_state=42)
+
+        # --- Isolation Forest ---
+        iso_params = {'n_estimators': 100, 'contamination': 0.15, 'random_state': 42}
+        iso_forest = IsolationForest(**iso_params)
         iso_forest.fit(X_scaled)
         joblib.dump(iso_forest, ANOMALY_MODEL_PATH)
-        
-        # Predict anomalies (-1 = anomaly, 1 = normal)
+
         anom_preds = iso_forest.predict(X_scaled)
         anom_binary = np.where(anom_preds == -1, 1, 0)
-        
-        # Anomaly Detection performance (using 'Failure' label as pseudo-ground truth)
         anom_accuracy = accuracy_score(y, anom_binary)
         anom_f1 = f1_score(y, anom_binary)
-        
-        # 2. Train Random Forest Classifier
+
+        # --- Random Forest Classifier ---
+        rf_params = {'n_estimators': 50, 'random_state': 42}
         X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
-        rf_classifier = RandomForestClassifier(n_estimators=50, random_state=42)
+        rf_classifier = RandomForestClassifier(**rf_params)
         rf_classifier.fit(X_train, y_train)
         joblib.dump(rf_classifier, FAILURE_MODEL_PATH)
-        
-        # Evaluate RF
+
         rf_preds = rf_classifier.predict(X_test)
         rf_accuracy = accuracy_score(y_test, rf_preds)
         rf_precision = precision_score(y_test, rf_preds)
         rf_recall = recall_score(y_test, rf_preds)
         rf_f1 = f1_score(y_test, rf_preds)
-        
+
+        # ── MLflow Logging ──
+        try:
+            with mlflow_run(EXPERIMENT_DEVOPS, run_name="Isolation Forest",
+                            tags={'model_type': 'anomaly_detection', 'dataset_size': str(len(df))}) as run:
+                mlflow.log_params({f'iso_{k}': v for k, v in iso_params.items()})
+                mlflow.log_metric('accuracy', anom_accuracy)
+                mlflow.log_metric('f1_score', anom_f1)
+                log_sklearn_model(iso_forest, artifact_path='isolation_forest')
+
+            with mlflow_run(EXPERIMENT_DEVOPS, run_name="Failure Predictor (RF)",
+                            tags={'model_type': 'failure_prediction', 'dataset_size': str(len(df))}) as run:
+                mlflow.log_params({f'rf_{k}': v for k, v in rf_params.items()})
+                mlflow.log_metric('accuracy', rf_accuracy)
+                mlflow.log_metric('precision', rf_precision)
+                mlflow.log_metric('recall', rf_recall)
+                mlflow.log_metric('f1_score', rf_f1)
+                log_sklearn_model(rf_classifier, artifact_path='failure_predictor_rf')
+        except Exception as e:
+            # MLflow logging should never break training
+            print(f'[MLflow] Warning: Failed to log run — {e}')
+
         return {
             'anomaly': {
                 'accuracy': float(anom_accuracy),

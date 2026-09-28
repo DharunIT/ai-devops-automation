@@ -11,6 +11,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from defect_prediction.config import CV_FOLDS, RANDOM_STATE
 from defect_prediction.utils import logger
+import mlflow
 
 def evaluate_model(model, X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.DataFrame, y_test: pd.Series, model_name: str):
     """
@@ -59,7 +60,7 @@ def evaluate_model(model, X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.
     else:
         overfit_status = "Good generalization (No severe overfitting)"
 
-    return {
+    result = {
         "model_name": model_name,
         "accuracy": acc,
         "precision": prec,
@@ -77,3 +78,21 @@ def evaluate_model(model, X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.
         "y_prob": y_prob.tolist(),
         "y_pred": y_pred.tolist()
     }
+
+    # ── MLflow Logging ──
+    try:
+        prefix = model_name.lower().replace(" ", "_")
+        mlflow.log_metric(f'{prefix}_accuracy', acc)
+        mlflow.log_metric(f'{prefix}_precision', prec)
+        mlflow.log_metric(f'{prefix}_recall', rec)
+        mlflow.log_metric(f'{prefix}_f1_score', f1)
+        mlflow.log_metric(f'{prefix}_roc_auc', roc_auc)
+        mlflow.log_metric(f'{prefix}_train_accuracy', train_acc)
+        mlflow.log_metric(f'{prefix}_overfit_gap', overfit_gap)
+        mlflow.log_metric(f'{prefix}_cv_mean_accuracy', cv_mean)
+        mlflow.log_metric(f'{prefix}_cv_std', cv_std)
+        logger.info(f"[MLflow] {model_name} evaluation metrics logged successfully.")
+    except Exception as e:
+        logger.warning(f"[MLflow] Failed to log {model_name} evaluation metrics — {e}")
+
+    return result

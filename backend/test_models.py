@@ -1,4 +1,9 @@
 import os
+import sys
+
+# Ensure workspace root is in sys.path when script is executed directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import pandas as pd
 from backend.models import MLManager, ANOMALY_MODEL_PATH, FAILURE_MODEL_PATH, generate_synthetic_data
 
