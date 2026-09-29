@@ -7,14 +7,17 @@ from threading import Thread
 # Inject parent directory into path to ensure backend package is resolvable
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def start_browser():
-    # Allow Flask to bind to port 5000 first
+def start_browser(port):
     time.sleep(2.0)
-    print("=== LAUNCHING DASHBOARD IN BROWSER ===")
-    webbrowser.open("http://localhost:5000/")
+    print(f"=== LAUNCHING AUTOOPS AI DASHBOARD IN BROWSER (PORT {port}) ===")
+    try:
+        webbrowser.open(f"http://localhost:{port}/")
+    except Exception as e:
+        print(f"Browser launch skipped: {e}")
 
 if __name__ == '__main__':
-    print("=== INITIALIZING AUTONOMIC DEVOPS PLATFORM (AUTOOPS) ===")
+    port = int(os.environ.get('PORT', 5000))
+    print(f"=== INITIALIZING AUTOOPS AI PLATFORM (PORT {port}) ===")
     
     # Import the app module
     try:
@@ -22,18 +25,20 @@ if __name__ == '__main__':
         from backend.simulation import simulator
     except ImportError as e:
         print(f"ImportError encountered while loading modules: {e}")
-        print("Please ensure dependencies are installed via: pip install -r backend/requirements.txt")
+        print("Please ensure dependencies are installed via: pip install -r requirements.txt")
         sys.exit(1)
         
-    # Start the simulator thread
-    simulator.set_app(app)
-    simulator.start()
-
+    # Start the simulator thread if not already running
+    if not simulator.running:
+        simulator.set_app(app)
+        simulator.start()
         
-    # Start browser asynchronously
-    browser_thread = Thread(target=start_browser, daemon=True)
-    browser_thread.start()
+    # Start browser asynchronously only in interactive desktop environments
+    if os.environ.get('AUTO_OPEN_BROWSER', 'true').lower() in ('true', '1', 'yes'):
+        browser_thread = Thread(target=start_browser, args=(port,), daemon=True)
+        browser_thread.start()
     
     # Start Flask server
-    print("Starting Flask web server on http://localhost:5000...")
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    print(f"Starting AutoOps AI web server on http://0.0.0.0:{port}...")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+

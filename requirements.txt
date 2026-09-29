@@ -1,4 +1,4 @@
-# AutoOps AI - Backend Dependencies
+# AutoOps AI - Production & Development Dependencies
 Flask>=2.3.0
 Flask-Cors>=4.0.0
 Flask-SQLAlchemy>=3.0.0
