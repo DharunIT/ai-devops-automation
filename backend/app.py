@@ -504,6 +504,68 @@ def update_speed():
     new_speed = simulator.set_speed(speed)
     return jsonify({"status": "success", "speed": new_speed})
 
+# Automated AI Incident Workflow Endpoints
+
+@app.route('/api/simulation/workflow/start', methods=['POST'])
+def workflow_start():
+    data = request.json or {}
+    server_id = data.get('server_id', 'Server-01')
+    fault_type = data.get('fault_type', 'cpu_spike')
+    
+    try:
+        res = simulator.workflow_start(server_id, fault_type)
+        return jsonify({"status": "success", **res})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/simulation/workflow/step', methods=['POST'])
+def workflow_step():
+    data = request.json or {}
+    step = data.get('step')
+    server_id = data.get('server_id', 'Server-01')
+    
+    try:
+        if step == 'anomaly':
+            res = simulator.workflow_step_anomaly(server_id)
+            return jsonify({"status": "success", "step": "anomaly", **res})
+        elif step == 'prediction':
+            res = simulator.workflow_step_prediction(server_id)
+            return jsonify({"status": "success", "step": "prediction", **res})
+        elif step == 'rca':
+            res = simulator.workflow_step_rca(server_id)
+            return jsonify({"status": "success", "step": "rca", **res})
+        elif step == 'incident':
+            root_cause = data.get('root_cause')
+            res = simulator.workflow_step_incident(server_id, root_cause)
+            return jsonify({"status": "success", "step": "incident", "incident": res})
+        elif step == 'healing':
+            incident_id = data.get('incident_id') or simulator.demo_workflow_incident_id
+            if not incident_id:
+                inc = Incident.query.filter_by(affected_component=server_id).order_by(Incident.timestamp.desc()).first()
+                incident_id = inc.id if inc else "INC-DEMO"
+            res = simulator.workflow_step_healing(incident_id, server_id)
+            return jsonify({"status": "success", "step": "healing", **res})
+        elif step == 'recovery':
+            incident_id = data.get('incident_id') or simulator.demo_workflow_incident_id
+            if not incident_id:
+                inc = Incident.query.filter_by(affected_component=server_id).order_by(Incident.timestamp.desc()).first()
+                incident_id = inc.id if inc else "INC-DEMO"
+            healing_log_id = data.get('healing_log_id')
+            res = simulator.workflow_step_recovery(incident_id, server_id, healing_log_id)
+            return jsonify({"status": "success", "step": "recovery", **res})
+        else:
+            return jsonify({"error": f"Unknown step: {step}"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "step": step, "message": str(e)}), 500
+
+@app.route('/api/simulation/workflow/reset', methods=['POST'])
+def workflow_reset():
+    try:
+        res = simulator.workflow_reset()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # MLflow Experiment Tracking Endpoints
 @app.route('/api/mlflow/runs', methods=['GET'])

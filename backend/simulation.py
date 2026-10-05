@@ -81,6 +81,10 @@ class DevOpsSimulator:
         self.healing_step = 0
         self.healing_timer = 0
         
+        # Demo workflow control state
+        self.demo_workflow_active = False
+        self.demo_workflow_incident_id = None
+        
         # App context references (for db operations)
         self.app = None
 
@@ -328,6 +332,10 @@ class DevOpsSimulator:
         self._run_agents_logic()
 
     def _run_agents_logic(self):
+        # Do not interfere with demo workflow if active
+        if self.demo_workflow_active:
+            return
+
         # Check if we are currently handling an active healing plan
         if self.current_healing_incident:
             self._handle_healing_progress()
@@ -564,7 +572,6 @@ class DevOpsSimulator:
             return min(3000.0, latency), f"Down: {str(e)}"
 
     def get_simulation_state(self):
-
         with self.lock:
             return {
                 "servers": self.servers,
@@ -573,13 +580,350 @@ class DevOpsSimulator:
                 "pipeline": self.pipeline,
                 "injected_faults": self.injected_faults,
                 "active_agent": self.active_agent,
-                "simulation_speed": self.simulation_speed
+                "simulation_speed": self.simulation_speed,
+                "demo_workflow_active": self.demo_workflow_active
             }
 
     def set_speed(self, speed):
         with self.lock:
             self.simulation_speed = max(0.1, min(10.0, float(speed)))
             return self.simulation_speed
+
+    # ==========================================
+    # AUTOMATED AI INCIDENT WORKFLOW METHODS
+    # ==========================================
+
+    def workflow_start(self, server_id='Server-01', fault_type='cpu_spike'):
+        with self.lock:
+            self.demo_workflow_active = True
+            self.injected_faults[server_id] = fault_type
+            
+            # Set realistic abnormal metrics
+            if fault_type == 'cpu_spike':
+                self.servers[server_id] = {"cpu": 96.8, "mem": 58.4, "disk": 42.0, "net": 28.5, "resp": 1420.0, "status": "Degraded"}
+            elif fault_type == 'memory_leak':
+                self.servers[server_id] = {"cpu": 64.2, "mem": 98.2, "disk": 45.0, "net": 18.0, "resp": 880.0, "status": "Degraded"}
+            elif fault_type == 'disk_full':
+                self.servers[server_id] = {"cpu": 45.0, "mem": 52.0, "disk": 99.4, "net": 14.0, "resp": 650.0, "status": "Degraded"}
+            elif fault_type == 'network_bottleneck':
+                self.servers[server_id] = {"cpu": 68.0, "mem": 50.0, "disk": 40.0, "net": 115.0, "resp": 1850.0, "status": "Degraded"}
+            else:
+                self.servers[server_id] = {"cpu": 15.0, "mem": 35.0, "disk": 40.0, "net": 5.0, "resp": 2200.0, "status": "Degraded"}
+                
+            self._set_components_status(server_id, "Degraded")
+            self.active_agent = "MonitoringAgent"
+            self.log_agent("MonitoringAgent", f"TELEMETRY ALERT: Simulated infrastructure failure '{fault_type}' injected on {server_id}. Anomaly detected across telemetry vectors.")
+            
+            # Commit abnormal metric record immediately
+            m = self.servers[server_id]
+            is_anom, score = MLManager.detect_anomaly([m["cpu"], m["mem"], m["disk"], m["net"], m["resp"]])
+            record = MetricRecord(
+                server_id=server_id,
+                cpu_usage=round(m["cpu"], 2),
+                memory_usage=round(m["mem"], 2),
+                disk_usage=round(m["disk"], 2),
+                network_traffic=round(m["net"], 2),
+                response_time=round(m["resp"], 2),
+                is_anomaly=True,
+                anomaly_score=round(score, 4)
+            )
+            db.session.add(record)
+            db.session.commit()
+            
+            return {
+                "server_id": server_id,
+                "fault_type": fault_type,
+                "metrics": m,
+                "status": "Failure Simulated",
+                "notification": f"⚠ Failure simulated on {server_id}"
+            }
+
+    def workflow_step_anomaly(self, server_id='Server-01'):
+        with self.lock:
+            m = self.servers.get(server_id, {"cpu": 96.8, "mem": 58.4, "disk": 42.0, "net": 28.5, "resp": 1420.0})
+            metrics_vector = [m["cpu"], m["mem"], m["disk"], m["net"], m["resp"]]
+            is_anom, score = MLManager.detect_anomaly(metrics_vector)
+            self.active_agent = "AnalysisAgent"
+            self.log_agent("AnalysisAgent", f"Isolation Forest scorer dispatched. Vector evaluated: [CPU: {m['cpu']}%, Mem: {m['mem']}%, Resp: {m['resp']}ms]. Score: {score:.4f} (Contamination: 0.05). ANOMALY DETECTED.")
+            
+            # Ensure latest record is marked anomaly in DB
+            latest = MetricRecord.query.filter_by(server_id=server_id).order_by(MetricRecord.timestamp.desc()).first()
+            if latest:
+                latest.is_anomaly = True
+                latest.anomaly_score = round(score, 4)
+                db.session.commit()
+                
+            return {
+                "detected": True,
+                "server_id": server_id,
+                "metrics": m,
+                "anomaly_score": round(score, 4),
+                "model": "Isolation Forest (Unsupervised)",
+                "status": "ANOMALY DETECTED"
+            }
+
+    def workflow_step_prediction(self, server_id='Server-01'):
+        with self.lock:
+            m = self.servers.get(server_id, {"cpu": 96.8, "mem": 58.4, "disk": 42.0, "net": 28.5, "resp": 1420.0})
+            metrics_vector = [m["cpu"], m["mem"], m["disk"], m["net"], m["resp"]]
+            prob, risk, fail_type = MLManager.predict_failure(metrics_vector)
+            
+            self.active_agent = "AnalysisAgent"
+            self.log_agent("AnalysisAgent", f"Random Forest classification model invoked. Evaluated 100 decision trees. Predicted mode: {fail_type} (Probability: {prob*100:.1f}%, Risk Level: {risk}). Status: FAILURE PREDICTED.")
+            
+            return {
+                "failure_probability": round(prob * 100, 1),
+                "risk_level": risk,
+                "predicted_failure_mode": fail_type,
+                "affected_component": server_id,
+                "model": "Random Forest Classifier (100 Trees)",
+                "status": "FAILURE PREDICTED"
+            }
+
+    def workflow_step_rca(self, server_id='Server-01'):
+        with self.lock:
+            fault = self.injected_faults.get(server_id, 'cpu_spike')
+            m = self.servers.get(server_id, {})
+            metrics_vector = [m.get("cpu", 96.8), m.get("mem", 58.4), m.get("disk", 42.0), m.get("net", 28.5), m.get("resp", 1420.0)]
+            prob, risk, fail_type = MLManager.predict_failure(metrics_vector)
+            
+            if "Memory" in fail_type or fault == "memory_leak":
+                root_cause = f"Out of Memory: Unbounded heap allocation leak in container runtime on {server_id}"
+                confidence = 98.2
+                recommendation = "Recycle memory heap and execute container redeployment"
+            elif "Disk" in fail_type or fault == "disk_full":
+                root_cause = f"Disk Full: Unrotated localized application logs saturating root filesystem on {server_id}"
+                confidence = 99.1
+                recommendation = "Purge cached build files and trigger log rotation cron"
+            elif "Network" in fail_type or fault == "network_bottleneck":
+                root_cause = f"Network Bottleneck: Edge proxy bandwidth flood and TCP connection queue exhaustion on {server_id}"
+                confidence = 94.5
+                recommendation = "Scale load-balancer bandwidth and reroute CDN ingress"
+            elif fault == "k8s_pod_crash":
+                root_cause = f"Kubernetes Pod Crash: Container worker segfault triggering HTTP 500 on {server_id}"
+                confidence = 95.0
+                recommendation = "Rollout restart of failed pod replica"
+            else:
+                root_cause = f"CPU Saturation: Thread pool starvation & compute runaway process on {server_id}"
+                confidence = 96.8
+                recommendation = "Scale Kubernetes pod replicas (2 to 4) and rebalance worker threads"
+
+            self.active_agent = "RCAAgent"
+            self.log_agent("RCAAgent", f"Root Cause Analysis complete: '{root_cause}' (Confidence: {confidence}%). Correlating telemetry features. Recommended remediation: {recommendation}.")
+            
+            return {
+                "root_cause": root_cause,
+                "affected_server": server_id,
+                "supporting_metrics": m,
+                "confidence": confidence,
+                "recommended_action": recommendation,
+                "status": "ROOT CAUSE IDENTIFIED"
+            }
+
+    def workflow_step_incident(self, server_id='Server-01', root_cause=None):
+        with self.lock:
+            m = self.servers.get(server_id, {})
+            incident_id = f"INC-{random.randint(10000, 99999)}"
+            cause = root_cause or f"Telemetry Anomaly & Failure Prediction on {server_id}"
+            
+            new_incident = Incident(
+                id=incident_id,
+                timestamp=datetime.utcnow(),
+                severity="critical",
+                affected_component=server_id,
+                root_cause=cause,
+                resolution_status="Investigating"
+            )
+            db.session.add(new_incident)
+            db.session.commit()
+            
+            self.demo_workflow_incident_id = incident_id
+            self.active_agent = "MonitoringAgent"
+            self.log_agent("MonitoringAgent", f"Active Incident {incident_id} created [CRITICAL] for {server_id}. State lifecycle: DETECTED → ANALYZING → RCA IDENTIFIED.")
+            
+            return new_incident.to_dict()
+
+    def workflow_step_healing(self, incident_id, server_id='Server-01'):
+        with self.lock:
+            fault = self.injected_faults.get(server_id, 'cpu_spike')
+            m = self.servers.get(server_id, {})
+            metrics_vector = [m.get("cpu", 96.8), m.get("mem", 58.4), m.get("disk", 42.0), m.get("net", 28.5), m.get("resp", 1420.0)]
+            _, _, fail_type = MLManager.predict_failure(metrics_vector)
+            
+            if "Memory" in fail_type or fault == "memory_leak":
+                action_type = "redeploy"
+                action_name = "Container Redeployment"
+                reason = "Memory leak threshold breached; recycling container heap and restarting process."
+                details = f"Memory heap recycled and fresh container service deployment rolled out on {server_id}."
+            elif "Disk" in fail_type or fault == "disk_full":
+                action_type = "clean_disk"
+                action_name = "Log Archive Purge & Disk Clean"
+                reason = "Disk space 99% exhausted; clearing temporary files and rotating logs."
+                details = f"Executed automated log rotation and purged build cache directories on {server_id}."
+            elif "Network" in fail_type or fault == "network_bottleneck":
+                action_type = "scale"
+                action_name = "Ingress Re-routing & Bandwidth Scaling"
+                reason = "Edge proxy bandwidth saturated; scaling ingress capacity."
+                details = f"Scaled network ingress throughput and rerouted traffic pool for {server_id}."
+            elif fault == "k8s_pod_crash":
+                action_type = "restart"
+                action_name = "Kubernetes Pod Rollout Restart"
+                reason = "Container worker crashed; recreating replica set."
+                details = f"Executed kubectl rollout restart for microservice pod on {server_id}."
+            else:
+                action_type = "scale"
+                action_name = "Horizontal Pod Scaling (HPA)"
+                reason = "CPU Saturation > 95%; scaling pod replicas from 2 to 4 to balance compute load."
+                details = f"Kubernetes HPA scaled deployment from 2 to 4 replicas and rebalanced threads on {server_id}."
+
+            healing_log = SelfHealingLog(
+                incident_id=incident_id,
+                action_type=action_type,
+                details=details,
+                status="In Progress"
+            )
+            db.session.add(healing_log)
+            
+            # Update incident state to Resolving
+            incident = Incident.query.get(incident_id)
+            if incident:
+                incident.resolution_status = "Resolving"
+                
+            # Add dynamic pod to simulate scaling in K8s
+            if action_type == "scale":
+                scaled_pod_name = f"api-pod-scaled-{random.randint(10, 99)}"
+                self.k8s_pods.append({
+                    "name": scaled_pod_name,
+                    "server": server_id,
+                    "status": "Running",
+                    "restarts": 0,
+                    "age": "1m",
+                    "cpu": "1.4%",
+                    "mem": "120Mi"
+                })
+            
+            self._set_components_status(server_id, "Scaling/Restarting")
+            db.session.commit()
+            
+            self.active_agent = "HealingAgent"
+            self.log_agent("HealingAgent", f"HEALING ACTION TRIGGERED: {action_name}. Reason: {reason}. Execution status: In Progress.")
+            
+            return {
+                "selected_action": action_name,
+                "action_type": action_type,
+                "affected_component": server_id,
+                "reason": reason,
+                "details": details,
+                "execution_status": "Executing",
+                "healing_log_id": healing_log.id,
+                "status": "HEALING ACTION TRIGGERED"
+            }
+
+    def workflow_step_recovery(self, incident_id, server_id='Server-01', healing_log_id=None):
+        with self.lock:
+            # Clear fault
+            if server_id in self.injected_faults:
+                del self.injected_faults[server_id]
+                
+            # Restore telemetry to healthy normal
+            self.servers[server_id] = {
+                "cpu": 32.4,
+                "mem": 43.8,
+                "disk": 38.5,
+                "net": 11.2,
+                "resp": 82.5,
+                "status": "Healthy"
+            }
+            
+            # Restore containers and pods
+            if server_id in self.containers:
+                for c in self.containers[server_id]:
+                    c["status"] = "Running"
+            for p in self.k8s_pods:
+                if p["server"] == server_id:
+                    p["status"] = "Running"
+                    p["cpu"] = "1.8%"
+                    
+            # Re-run health and anomaly checks
+            normal_vector = [32.4, 43.8, 38.5, 11.2, 82.5]
+            is_anom, anom_score = MLManager.detect_anomaly(normal_vector)
+            
+            # Commit normalized metric to DB
+            record = MetricRecord(
+                server_id=server_id,
+                cpu_usage=32.4,
+                memory_usage=43.8,
+                disk_usage=38.5,
+                network_traffic=11.2,
+                response_time=82.5,
+                is_anomaly=False,
+                anomaly_score=round(anom_score, 4)
+            )
+            db.session.add(record)
+            
+            # Mark incident as Resolved
+            incident = Incident.query.get(incident_id)
+            if incident:
+                incident.resolution_status = "Resolved"
+                incident.resolved_at = datetime.utcnow()
+                
+            # Mark healing log as Success
+            if healing_log_id:
+                h_log = SelfHealingLog.query.get(healing_log_id)
+                if h_log:
+                    h_log.status = "Success"
+            else:
+                h_log = SelfHealingLog.query.filter_by(incident_id=incident_id).first()
+                if h_log:
+                    h_log.status = "Success"
+                    
+            db.session.commit()
+            
+            self.demo_workflow_active = False
+            self.active_agent = "MonitoringAgent"
+            self.log_agent("HealingAgent", f"Remediation playbook execution verified SUCCESS on {server_id}. Services scaled and telemetry returned to normal baseline.")
+            self.log_agent("MonitoringAgent", f"RECOVERY VERIFIED: Telemetry stabilized on {server_id} (CPU: 32.4%, Resp: 82.5ms). Isolation Forest confirms zero anomalies. Incident {incident_id} marked as RESOLVED.")
+            
+            return {
+                "verified": True,
+                "server_id": server_id,
+                "incident_id": incident_id,
+                "restored_metrics": self.servers[server_id],
+                "anomaly_score": round(anom_score, 4),
+                "status": "RECOVERY VERIFIED",
+                "lifecycle": ["DETECTED", "ANALYZING", "RCA IDENTIFIED", "HEALING", "RECOVERED"]
+            }
+
+    def workflow_reset(self):
+        with self.lock:
+            self.injected_faults.clear()
+            self.demo_workflow_active = False
+            self.current_healing_incident = None
+            self.demo_workflow_incident_id = None
+            
+            self.servers = {
+                "Server-01": {"cpu": 34.0, "mem": 45.0, "disk": 40.0, "net": 12.0, "resp": 88.0, "status": "Healthy"},
+                "Server-02": {"cpu": 28.0, "mem": 52.0, "disk": 48.0, "net": 15.0, "resp": 105.0, "status": "Healthy"},
+                "Server-03": {"cpu": 40.0, "mem": 38.0, "disk": 32.0, "net": 10.0, "resp": 78.0, "status": "Healthy"}
+            }
+            
+            for s_name in self.containers:
+                for c in self.containers[s_name]:
+                    c["status"] = "Running"
+            for p in self.k8s_pods:
+                p["status"] = "Running"
+                
+            # Resolve all open incidents
+            open_incs = Incident.query.filter(Incident.resolution_status != 'Resolved').all()
+            for inc in open_incs:
+                inc.resolution_status = "Resolved"
+                inc.resolved_at = datetime.utcnow()
+                
+            db.session.commit()
+            self.active_agent = "MonitoringAgent"
+            self.log_agent("MonitoringAgent", "RESET DEMO: All infrastructure telemetry restored to healthy baseline parameters. All active incidents cleared.")
+            
+            return {"status": "success", "message": "Demo state reset successfully."}
 
 # Global simulator object
 simulator = DevOpsSimulator()

@@ -47,6 +47,319 @@ function AutoOpsApp() {
     // Notifications State
     const [notificationsOpen, setNotificationsOpen] = useState(false);
 
+    // ==========================================
+    // AUTOMATED AI INCIDENT WORKFLOW STATE
+    // ==========================================
+    const initialStages = [
+        { id: 'simulate', title: 'Failure Simulated', subtitle: 'Target Server-01 • Telemetry Spike Injected', model: 'Chaos Injection', status: 'WAITING', details: '' },
+        { id: 'anomaly', title: 'Anomaly Detected', subtitle: 'Isolation Forest Outlier Scoring', model: 'Isolation Forest', status: 'WAITING', details: '' },
+        { id: 'prediction', title: 'Failure Predicted', subtitle: 'Classification & Probability Scoring', model: 'Random Forest', status: 'WAITING', details: '' },
+        { id: 'rca', title: 'Root Cause Identified', subtitle: 'Diagnostic Feature Attribution', model: 'RCA Agent', status: 'WAITING', details: '' },
+        { id: 'incident', title: 'Active Incident Created', subtitle: 'State Progression & Alert Dispatch', model: 'Incident Registry', status: 'WAITING', details: '' },
+        { id: 'healing', title: 'Healing Action Executed', subtitle: 'Autonomous Orchestration Remediation', model: 'Kubernetes HPA', status: 'WAITING', details: '' },
+        { id: 'recovery', title: 'Recovery Verified', subtitle: 'Telemetry Stabilization & Verification', model: 'Health Verifier', status: 'WAITING', details: '' },
+        { id: 'history', title: 'Recovery History Updated', subtitle: 'Audit Ledger & Incident Archival', model: 'Recovery Archive', status: 'WAITING', details: '' }
+    ];
+
+    const [workflow, setWorkflow] = useState({
+        active: false,
+        completed: false,
+        stageIndex: 0,
+        progress: 0,
+        timer: 0,
+        serverId: 'Server-01',
+        faultType: 'cpu_spike',
+        error: null,
+        failedStage: null,
+        incidentId: null,
+        notification: null,
+        stages: initialStages
+    });
+
+    const workflowTimersRef = useRef([]);
+    const tickerRef = useRef(null);
+
+    const clearAllWorkflowTimers = () => {
+        workflowTimersRef.current.forEach(t => clearTimeout(t));
+        workflowTimersRef.current = [];
+        if (tickerRef.current) {
+            clearInterval(tickerRef.current);
+            tickerRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        return () => clearAllWorkflowTimers();
+    }, []);
+
+    // Automated 8-Stage Demonstration Workflow Execution
+    const handleStartAutomatedWorkflow = async (targetServer = 'Server-01', fault = 'cpu_spike') => {
+        clearAllWorkflowTimers();
+
+        const freshStages = initialStages.map(s => ({ ...s, status: 'WAITING', details: '' }));
+        freshStages[0].status = 'RUNNING';
+
+        setWorkflow({
+            active: true,
+            completed: false,
+            stageIndex: 0,
+            progress: 5,
+            timer: 0.0,
+            serverId: targetServer,
+            faultType: fault,
+            error: null,
+            failedStage: null,
+            incidentId: null,
+            notification: {
+                title: 'Infrastructure Anomaly Injected',
+                message: `⚠ Failure simulated on ${targetServer}: Critical CPU & latency degradation spike injected.`,
+                type: 'warning'
+            },
+            stages: freshStages
+        });
+
+        const startTime = Date.now();
+        tickerRef.current = setInterval(() => {
+            const elapsed = (Date.now() - startTime) / 1000;
+            setWorkflow(prev => prev.active ? ({ ...prev, timer: Math.min(16.0, elapsed) }) : prev);
+        }, 100);
+
+        try {
+            // Stage 0: Simulate Failure at t = 0s
+            const simRes = await window.AutoOpsAPI.simulation.startWorkflow(targetServer, fault);
+            await fetchTelemetry();
+
+            setWorkflow(prev => {
+                const s = [...prev.stages];
+                s[0] = { ...s[0], status: 'COMPLETED', details: `CPU: ${simRes.metrics.cpu}%, Resp: ${simRes.metrics.resp}ms (Spike Injected)` };
+                s[1] = { ...s[1], status: 'RUNNING' };
+                return { ...prev, stageIndex: 1, progress: 15, stages: s };
+            });
+
+            let currentIncidentId = null;
+            let currentHealingLogId = null;
+            let currentRcaResult = null;
+
+            // Stage 1: Anomaly Detection (Isolation Forest) at t = 1.8s
+            const t1 = setTimeout(async () => {
+                try {
+                    const anomRes = await window.AutoOpsAPI.simulation.stepWorkflow('anomaly', { server_id: targetServer });
+                    await fetchTelemetry();
+
+                    setWorkflow(prev => {
+                        const s = [...prev.stages];
+                        s[1] = { ...s[1], status: 'COMPLETED', details: `Isolation Score: ${anomRes.anomaly_score} • Contamination: 0.05 • Anomaly Verified` };
+                        s[2] = { ...s[2], status: 'RUNNING' };
+                        return { ...prev, stageIndex: 2, progress: 28, stages: s };
+                    });
+
+                    // Stage 2: Failure Prediction (Random Forest) at t = 3.8s
+                    const t2 = setTimeout(async () => {
+                        try {
+                            const predRes = await window.AutoOpsAPI.simulation.stepWorkflow('prediction', { server_id: targetServer });
+                            await fetchTelemetry();
+
+                            setWorkflow(prev => {
+                                const s = [...prev.stages];
+                                s[2] = { ...s[2], status: 'COMPLETED', details: `Mode: ${predRes.predicted_failure_mode} • Prob: ${predRes.failure_probability}% (${predRes.risk_level})` };
+                                s[3] = { ...s[3], status: 'RUNNING' };
+                                return { ...prev, stageIndex: 3, progress: 42, stages: s };
+                            });
+
+                            // Stage 3: Root Cause Analysis (RCA) at t = 5.8s
+                            const t3 = setTimeout(async () => {
+                                try {
+                                    const rcaRes = await window.AutoOpsAPI.simulation.stepWorkflow('rca', { server_id: targetServer });
+                                    currentRcaResult = rcaRes;
+                                    await fetchTelemetry();
+
+                                    setWorkflow(prev => {
+                                        const s = [...prev.stages];
+                                        s[3] = { ...s[3], status: 'COMPLETED', details: `${rcaRes.root_cause} (Confidence: ${rcaRes.confidence}%)` };
+                                        s[4] = { ...s[4], status: 'RUNNING' };
+                                        return { ...prev, stageIndex: 4, progress: 55, stages: s };
+                                    });
+
+                                    // Stage 4: Incident Creation at t = 7.8s
+                                    const t4 = setTimeout(async () => {
+                                        try {
+                                            const incRes = await window.AutoOpsAPI.simulation.stepWorkflow('incident', {
+                                                server_id: targetServer,
+                                                root_cause: currentRcaResult ? currentRcaResult.root_cause : null
+                                            });
+                                            currentIncidentId = incRes.incident.id;
+                                            await fetchTelemetry();
+
+                                            setWorkflow(prev => {
+                                                const s = [...prev.stages];
+                                                s[4] = { ...s[4], status: 'COMPLETED', details: `Registered ID: ${incRes.incident.id} [CRITICAL] • State: RCA IDENTIFIED` };
+                                                s[5] = { ...s[5], status: 'RUNNING' };
+                                                return { ...prev, stageIndex: 5, progress: 70, incidentId: incRes.incident.id, stages: s };
+                                            });
+
+                                            // Stage 5: Healing Action at t = 10.5s
+                                            const t5 = setTimeout(async () => {
+                                                try {
+                                                    const healRes = await window.AutoOpsAPI.simulation.stepWorkflow('healing', {
+                                                        server_id: targetServer,
+                                                        incident_id: currentIncidentId
+                                                    });
+                                                    currentHealingLogId = healRes.healing_log_id;
+                                                    await fetchTelemetry();
+
+                                                    setWorkflow(prev => {
+                                                        const s = [...prev.stages];
+                                                        s[5] = { ...s[5], status: 'COMPLETED', details: `${healRes.selected_action}: ${healRes.details}` };
+                                                        s[6] = { ...s[6], status: 'RUNNING' };
+                                                        return { ...prev, stageIndex: 6, progress: 84, stages: s };
+                                                    });
+
+                                                    // Stage 6: Recovery Verification at t = 13.5s
+                                                    const t6 = setTimeout(async () => {
+                                                        try {
+                                                            const recRes = await window.AutoOpsAPI.simulation.stepWorkflow('recovery', {
+                                                                server_id: targetServer,
+                                                                incident_id: currentIncidentId,
+                                                                healing_log_id: currentHealingLogId
+                                                            });
+                                                            await fetchTelemetry();
+
+                                                            setWorkflow(prev => {
+                                                                const s = [...prev.stages];
+                                                                s[6] = { ...s[6], status: 'COMPLETED', details: `CPU: ${recRes.restored_metrics.cpu}%, Resp: ${recRes.restored_metrics.resp}ms • 0 Anomalies Verified` };
+                                                                s[7] = { ...s[7], status: 'RUNNING' };
+                                                                return {
+                                                                    ...prev,
+                                                                    stageIndex: 7,
+                                                                    progress: 95,
+                                                                    notification: {
+                                                                        title: 'Infrastructure Recovered',
+                                                                        message: `✓ Incident ${currentIncidentId} recovered on ${targetServer}. Telemetry restored to baseline.`,
+                                                                        type: 'success'
+                                                                    },
+                                                                    stages: s
+                                                                };
+                                                            });
+
+                                                            // Stage 7: Recovery History Updated at t = 15.5s
+                                                            const t7 = setTimeout(async () => {
+                                                                if (tickerRef.current) {
+                                                                    clearInterval(tickerRef.current);
+                                                                    tickerRef.current = null;
+                                                                }
+                                                                await fetchTelemetry();
+
+                                                                setWorkflow(prev => {
+                                                                    const s = [...prev.stages];
+                                                                    s[7] = { ...s[7], status: 'COMPLETED', details: `Incident ${currentIncidentId} archived to Incident Log Archive with audit ledger` };
+                                                                    return {
+                                                                        ...prev,
+                                                                        active: false,
+                                                                        completed: true,
+                                                                        progress: 100,
+                                                                        timer: 15.5,
+                                                                        stages: s
+                                                                    };
+                                                                });
+
+                                                                setTimeout(() => {
+                                                                    setWorkflow(prev => ({ ...prev, notification: null }));
+                                                                }, 5000);
+
+                                                            }, 2000);
+                                                            workflowTimersRef.current.push(t7);
+
+                                                        } catch (err6) {
+                                                            handleWorkflowError('Recovery Verification', 6, err6);
+                                                        }
+                                                    }, 3000);
+                                                    workflowTimersRef.current.push(t6);
+
+                                                } catch (err5) {
+                                                    handleWorkflowError('Healing Action', 5, err5);
+                                                }
+                                            }, 2700);
+                                            workflowTimersRef.current.push(t5);
+
+                                        } catch (err4) {
+                                            handleWorkflowError('Incident Creation', 4, err4);
+                                        }
+                                    }, 2000);
+                                    workflowTimersRef.current.push(t4);
+
+                                } catch (err3) {
+                                    handleWorkflowError('Root Cause Analysis', 3, err3);
+                                }
+                            }, 2000);
+                            workflowTimersRef.current.push(t3);
+
+                        } catch (err2) {
+                            handleWorkflowError('Failure Prediction', 2, err2);
+                        }
+                    }, 2000);
+                    workflowTimersRef.current.push(t2);
+
+                } catch (err1) {
+                    handleWorkflowError('Anomaly Detection', 1, err1);
+                }
+            }, 1800);
+            workflowTimersRef.current.push(t1);
+
+        } catch (err0) {
+            handleWorkflowError('Simulate Failure', 0, err0);
+        }
+    };
+
+    const handleWorkflowError = (stageName, stageIdx, err) => {
+        clearAllWorkflowTimers();
+        console.error(`Workflow failed at stage ${stageName}:`, err);
+        setWorkflow(prev => {
+            const s = [...prev.stages];
+            if (s[stageIdx]) {
+                s[stageIdx] = { ...s[stageIdx], status: 'FAILED', details: err.message || 'Execution error' };
+            }
+            return {
+                ...prev,
+                active: false,
+                error: err.message || 'Stage execution failed',
+                failedStage: stageName,
+                stages: s
+            };
+        });
+    };
+
+    const handleResetDemo = async () => {
+        clearAllWorkflowTimers();
+        try {
+            await window.AutoOpsAPI.simulation.resetWorkflow();
+        } catch (e) {
+            console.warn('Reset API warning:', e);
+        }
+        await fetchTelemetry();
+        setWorkflow({
+            active: false,
+            completed: false,
+            stageIndex: 0,
+            progress: 0,
+            timer: 0,
+            serverId: 'Server-01',
+            faultType: 'cpu_spike',
+            error: null,
+            failedStage: null,
+            incidentId: null,
+            notification: {
+                title: 'System Reset',
+                message: 'All simulated faults cleared. Telemetry and active incidents restored to baseline normal.',
+                type: 'success'
+            },
+            stages: initialStages.map(s => ({ ...s, status: 'WAITING', details: '' }))
+        });
+
+        setTimeout(() => {
+            setWorkflow(prev => ({ ...prev, notification: null }));
+        }, 4000);
+    };
+
     // Toggle Sidebar Category Accordion
     const toggleCategory = (cat) => {
         setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
@@ -109,12 +422,7 @@ function AutoOpsApp() {
 
     // Handle Fault Injection
     const handleInjectFault = async (server, fault) => {
-        try {
-            await window.AutoOpsAPI.simulation.injectFault(server, fault);
-            fetchTelemetry();
-        } catch (e) {
-            alert('Failed injecting fault: ' + e.message);
-        }
+        handleStartAutomatedWorkflow(server, fault);
     };
 
     // Handle Speed Update
@@ -237,6 +545,51 @@ function AutoOpsApp() {
         }
     ];
 
+    // Module status badge helper for college presentation demo
+    const getModuleBadge = (moduleId) => {
+        if (workflow.active || workflow.completed) {
+            if (moduleId === 'live_monitoring') {
+                if (workflow.stageIndex >= 6) return { text: '● Recovered', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+                if (workflow.stageIndex >= 0) return { text: '⚠ Elevated', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse' };
+                return { text: '● Live', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+            }
+            if (moduleId === 'anomalies') {
+                if (workflow.stages[1].status === 'RUNNING') return { text: '⚠ Detecting...', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse' };
+                if (workflow.stages[1].status === 'COMPLETED') return { text: '⚠ Anomaly', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' };
+            }
+            if (moduleId === 'failures') {
+                if (workflow.stages[2].status === 'RUNNING') return { text: '🔮 Predicting...', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30 animate-pulse' };
+                if (workflow.stages[2].status === 'COMPLETED') return { text: '🔮 Prediction', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' };
+            }
+            if (moduleId === 'rca') {
+                if (workflow.stages[3].status === 'RUNNING') return { text: '🔍 Analyzing...', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30 animate-pulse' };
+                if (workflow.stages[3].status === 'COMPLETED') return { text: '🔍 RCA', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' };
+            }
+            if (moduleId === 'active_incidents') {
+                if (workflow.stages[4].status === 'RUNNING') return { text: '🚨 Registering...', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse' };
+                if (workflow.stages[6].status === 'COMPLETED' || workflow.stages[7].status === 'COMPLETED') return { text: '✓ Recovered', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+                if (workflow.stages[4].status === 'COMPLETED') return { text: '🚨 Incident', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse' };
+            }
+            if (moduleId === 'healing_actions') {
+                if (workflow.stages[5].status === 'RUNNING') return { text: '🛠 Healing...', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30 animate-pulse' };
+                if (workflow.stages[5].status === 'COMPLETED') return { text: '🛠 Healing', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+            }
+            if (moduleId === 'recovery_history') {
+                if (workflow.stages[7].status === 'RUNNING') return { text: 'Archiving...', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 animate-pulse' };
+                if (workflow.stages[7].status === 'COMPLETED') return { text: '✓ Recovered', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+            }
+        }
+
+        if (moduleId === 'live_monitoring') {
+            return { text: '● Monitoring', color: 'bg-emerald-500/10 text-emerald-400/80 border-emerald-500/20' };
+        }
+        const hasUnresolved = incidents.some(i => i.resolution_status !== 'Resolved');
+        if (hasUnresolved && moduleId === 'active_incidents') {
+            return { text: '🚨 Incident', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse' };
+        }
+        return null;
+    };
+
     // Notification Items
     const unreadNotifications = incidents.filter(i => i.resolution_status !== 'Resolved');
 
@@ -310,6 +663,7 @@ function AutoOpsApp() {
                                         <div className="pl-3 mt-1 space-y-0.5 border-l border-slate-800/80 ml-3">
                                             {item.children.map((child) => {
                                                 const isActive = currentView === child.id;
+                                                const badge = getModuleBadge(child.id);
                                                 return (
                                                     <button
                                                         key={child.id}
@@ -317,14 +671,21 @@ function AutoOpsApp() {
                                                             setCurrentView(child.id);
                                                             setMobileDrawerOpen(false);
                                                         }}
-                                                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-xs transition-all ${
+                                                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium text-xs transition-all ${
                                                             isActive
                                                                 ? 'bg-cyan-500/15 text-cyan-300 font-semibold border-l-2 border-cyan-400'
                                                                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
                                                         }`}
                                                     >
-                                                        <i className={`fas ${child.icon} text-[11px] w-3.5 text-center ${isActive ? 'text-cyan-400' : 'text-slate-500'}`} />
-                                                        <span className="truncate">{child.label}</span>
+                                                        <div className="flex items-center gap-2.5 truncate">
+                                                            <i className={`fas ${child.icon} text-[11px] w-3.5 text-center ${isActive ? 'text-cyan-400' : 'text-slate-500'}`} />
+                                                            <span className="truncate">{child.label}</span>
+                                                        </div>
+                                                        {badge && (
+                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border shrink-0 ${badge.color}`}>
+                                                                {badge.text}
+                                                            </span>
+                                                        )}
                                                     </button>
                                                 );
                                             })}
@@ -360,11 +721,14 @@ function AutoOpsApp() {
                             </span>
                         </div>
                         <button
-                            onClick={() => openFaultForServer('Server-01')}
-                            className="text-rose-400 hover:text-rose-300 font-bold text-xs"
-                            title="Simulate Failure"
+                            onClick={() => handleStartAutomatedWorkflow('Server-01', 'cpu_spike')}
+                            disabled={workflow.active}
+                            className={`p-1 rounded font-bold text-xs transition-colors ${
+                                workflow.active ? 'text-amber-400 cursor-wait' : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+                            }`}
+                            title="Simulate Failure (Automated AI Demo)"
                         >
-                            <i className="fas fa-bolt" />
+                            <i className={`fas ${workflow.active ? 'fa-spinner fa-spin' : 'fa-bolt'}`} />
                         </button>
                     </div>
                 </div>
@@ -409,13 +773,31 @@ function AutoOpsApp() {
                             </span>
                         </div>
 
-                        {/* Simulate Failure Quick Action Button */}
+                        {/* Simulate Failure Quick Action Button (Automated Demo) */}
                         <button
-                            onClick={() => openFaultForServer('Server-01')}
-                            className="px-3 py-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-rose-500/10"
+                            id="header-simulate-failure-btn"
+                            onClick={() => handleStartAutomatedWorkflow('Server-01', 'cpu_spike')}
+                            disabled={workflow.active}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+                                workflow.active
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 cursor-wait'
+                                    : 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border-rose-500/30 hover:scale-[1.02] shadow-rose-500/10'
+                            }`}
+                            title="Trigger 8-Stage Automated AI Incident Workflow"
                         >
-                            <i className="fas fa-bolt text-rose-400" />
-                            <span className="hidden md:inline">Simulate Failure</span>
+                            <i className={`fas ${workflow.active ? 'fa-spinner fa-spin' : 'fa-bolt'} text-rose-400`} />
+                            <span className="hidden md:inline">{workflow.active ? 'Executing Workflow...' : 'Simulate Failure'}</span>
+                        </button>
+
+                        {/* Reset Demo Button */}
+                        <button
+                            id="header-reset-demo-btn"
+                            onClick={handleResetDemo}
+                            className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-all flex items-center gap-1.5"
+                            title="Reset Infrastructure Telemetry and Workflow state"
+                        >
+                            <i className="fas fa-undo-alt text-slate-400 text-xs" />
+                            <span className="hidden lg:inline">Reset Demo</span>
                         </button>
 
                         {/* Notifications Bell */}
@@ -498,6 +880,17 @@ function AutoOpsApp() {
 
                 {/* MAIN CONTENT ROUTER */}
                 <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+                    {/* Persistent Mini Workflow Banner for non-overview pages during demo */}
+                    {currentView !== 'overview' && (workflow.active || workflow.completed) && (
+                        <div className="mb-6">
+                            <window.AutoOpsComponents.AutomatedWorkflowPanel
+                                workflow={workflow}
+                                onReset={handleResetDemo}
+                                onRetry={() => handleStartAutomatedWorkflow('Server-01', 'cpu_spike')}
+                            />
+                        </div>
+                    )}
+
                     {/* 1. Overview */}
                     {currentView === 'overview' && (
                         <window.AutoOpsOverview.OverviewPage
@@ -507,6 +900,10 @@ function AutoOpsApp() {
                             incidents={incidents}
                             agentLogs={agentLogs}
                             activeAgent={activeAgent}
+                            workflow={workflow}
+                            onStartWorkflow={handleStartAutomatedWorkflow}
+                            onResetWorkflow={handleResetDemo}
+                            onRetryWorkflow={() => handleStartAutomatedWorkflow('Server-01', 'cpu_spike')}
                             onNavigate={(viewId) => setCurrentView(viewId)}
                             onOpenFaultModal={() => openFaultForServer('Server-01')}
                             onResolveIncident={handleResolveIncident}
@@ -639,6 +1036,16 @@ function AutoOpsApp() {
                 onInject={handleInjectFault}
                 defaultServer={faultModalServer}
             />
+
+            {/* TOAST NOTIFICATION POPUP */}
+            {workflow.notification && (
+                <window.AutoOpsComponents.ToastNotification
+                    title={workflow.notification.title}
+                    message={workflow.notification.message}
+                    type={workflow.notification.type}
+                    onClose={() => setWorkflow(prev => ({ ...prev, notification: null }))}
+                />
+            )}
         </div>
     );
 }

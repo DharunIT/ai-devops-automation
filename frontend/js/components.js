@@ -207,6 +207,45 @@ window.AutoOpsComponents = (() => {
                     </p>
                 </div>
 
+                {/* Visible 5-Stage Incident Lifecycle */}
+                {(() => {
+                    const statusStr = (incident.resolution_status || '').toLowerCase();
+                    let stepNum = 1;
+                    if (statusStr.includes('resolved') || statusStr.includes('recovered')) stepNum = 5;
+                    else if (statusStr.includes('resolving') || statusStr.includes('healing')) stepNum = 4;
+                    else if (statusStr.includes('investigating') || statusStr.includes('rca')) stepNum = 3;
+                    else if (statusStr.includes('analyzing') || statusStr.includes('open')) stepNum = 2;
+
+                    return (
+                        <div className="mt-3 py-2 px-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between text-[10px] font-bold">
+                            <span className={stepNum >= 1 ? "text-rose-400 flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+                                <i className={`fas ${stepNum >= 2 ? 'fa-check text-emerald-400' : 'fa-exclamation-circle text-rose-400 animate-pulse'} text-[9px]`} />
+                                DETECTED
+                            </span>
+                            <i className="fas fa-chevron-right text-[8px] text-slate-600" />
+                            <span className={stepNum >= 2 ? "text-purple-400 flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+                                <i className={`fas ${stepNum >= 3 ? 'fa-check text-emerald-400' : stepNum === 2 ? 'fa-spinner fa-spin text-purple-400' : 'fa-circle'} text-[9px]`} />
+                                ANALYZING
+                            </span>
+                            <i className="fas fa-chevron-right text-[8px] text-slate-600" />
+                            <span className={stepNum >= 3 ? "text-amber-400 flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+                                <i className={`fas ${stepNum >= 4 ? 'fa-check text-emerald-400' : stepNum === 3 ? 'fa-spinner fa-spin text-amber-400' : 'fa-circle'} text-[9px]`} />
+                                RCA IDENTIFIED
+                            </span>
+                            <i className="fas fa-chevron-right text-[8px] text-slate-600" />
+                            <span className={stepNum >= 4 ? "text-cyan-400 flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
+                                <i className={`fas ${stepNum >= 5 ? 'fa-check text-emerald-400' : stepNum === 4 ? 'fa-tools animate-spin text-cyan-400' : 'fa-circle'} text-[9px]`} />
+                                HEALING
+                            </span>
+                            <i className="fas fa-chevron-right text-[8px] text-slate-600" />
+                            <span className={stepNum >= 5 ? "text-emerald-400 flex items-center gap-1 font-extrabold" : "text-slate-500 flex items-center gap-1"}>
+                                <i className={`fas ${stepNum >= 5 ? 'fa-check-circle text-emerald-400' : 'fa-circle'} text-[9px]`} />
+                                RECOVERED
+                            </span>
+                        </div>
+                    );
+                })()}
+
                 <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between">
                     <div className="text-[11px] text-slate-400">
                         {isResolved ? (
@@ -506,6 +545,269 @@ window.AutoOpsComponents = (() => {
         );
     }
 
+    // 12. ToastNotification
+    function ToastNotification({ notification, onClose }) {
+        if (!notification) return null;
+        const isError = notification.type === 'error';
+        const isSuccess = notification.type === 'success';
+
+        return (
+            <div className="fixed top-20 right-6 z-50 animate-bounce-short max-w-md">
+                <div className={`p-4 rounded-2xl glass-panel border shadow-2xl flex items-start gap-3 backdrop-blur-md ${
+                    isError 
+                        ? 'border-rose-500/50 bg-rose-950/80 text-rose-200' 
+                        : isSuccess 
+                        ? 'border-emerald-500/50 bg-emerald-950/80 text-emerald-200' 
+                        : 'border-amber-500/50 bg-slate-950/90 text-amber-200'
+                }`}>
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        isError ? 'bg-rose-500/20 text-rose-400' : isSuccess ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                    }`}>
+                        <i className={`fas ${isError ? 'fa-exclamation-triangle' : isSuccess ? 'fa-check-circle' : 'fa-bolt'}`} />
+                    </div>
+                    <div className="flex-1 text-xs">
+                        <div className="font-bold flex items-center justify-between">
+                            <span>{notification.title || 'System Notification'}</span>
+                            <span className="text-[10px] opacity-75 font-mono">NOW</span>
+                        </div>
+                        <p className="mt-0.5 text-slate-300 text-[11px] leading-relaxed">{notification.message}</p>
+                    </div>
+                    {onClose && (
+                        <button onClick={onClose} className="text-slate-400 hover:text-white text-xs ml-1">
+                            <i className="fas fa-times" />
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // 13. AutomatedWorkflowPanel
+    function AutomatedWorkflowPanel({
+        workflow, // { active, stageIndex, progress, timer, serverId, faultType, error, stages }
+        onStartWorkflow,
+        onResetWorkflow,
+        onRetryWorkflow
+    }) {
+        if (!workflow) return null;
+
+        const isRunning = workflow.active;
+        const isCompleted = workflow.completed;
+        const progress = Math.min(100, Math.max(0, workflow.progress || 0));
+
+        const stages = workflow.stages || [
+            { id: 'simulate', title: 'Failure Simulated', subtitle: 'Target Server-01 &bull; Telemetry Spike Injected', model: 'Chaos Injection', status: 'WAITING' },
+            { id: 'anomaly', title: 'Anomaly Detected', subtitle: 'Unsupervised Outlier Scoring', model: 'Isolation Forest', status: 'WAITING' },
+            { id: 'prediction', title: 'Failure Predicted', subtitle: 'Classification & Probability Scoring', model: 'Random Forest', status: 'WAITING' },
+            { id: 'rca', title: 'Root Cause Identified', subtitle: 'Diagnostic Feature Attribution', model: 'RCA Agent', status: 'WAITING' },
+            { id: 'incident', title: 'Active Incident Created', subtitle: 'State Progression & Alert Dispatch', model: 'Incident Registry', status: 'WAITING' },
+            { id: 'healing', title: 'Healing Action Executed', subtitle: 'Autonomous Orchestration Remediation', model: 'Kubernetes HPA', status: 'WAITING' },
+            { id: 'recovery', title: 'Recovery Verified', subtitle: 'Telemetry Stabilization & Verification', model: 'Health Verifier', status: 'WAITING' },
+            { id: 'history', title: 'Recovery History Updated', subtitle: 'Audit Ledger & Incident Archival', model: 'Recovery Archive', status: 'WAITING' }
+        ];
+
+        return (
+            <div className="glass-panel p-6 rounded-3xl border border-cyan-500/30 bg-gradient-to-br from-slate-900/95 via-[#081020] to-indigo-950/40 relative overflow-hidden shadow-2xl transition-all duration-300">
+                {/* Background ambient glow */}
+                <div className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none transition-all duration-1000 ${
+                    isCompleted ? 'bg-emerald-500/10' : isRunning ? 'bg-cyan-500/10' : 'bg-indigo-500/5'
+                }`} />
+
+                {/* Header Row */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10 pb-5 border-b border-slate-800/80">
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                            <span className="text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5">
+                                <i className="fas fa-brain text-[10px]" />
+                                AI INCIDENT RESPONSE WORKFLOW
+                            </span>
+                            
+                            {isCompleted ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 animate-pulse">
+                                    <i className="fas fa-check-circle" /> WORKFLOW COMPLETE &bull; 100% RECOVERED
+                                </span>
+                            ) : isRunning ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+                                    <i className="fas fa-circle-notch fa-spin text-[10px]" />
+                                    STAGE {(workflow.stageIndex || 0) + 1} OF {stages.length}: {stages[workflow.stageIndex]?.title?.toUpperCase() || 'RUNNING'}
+                                </span>
+                            ) : (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1.5">
+                                    <i className="fas fa-pause text-[8px]" /> STANDBY &bull; READY FOR DEMO
+                                </span>
+                            )}
+
+                            {isRunning && (
+                                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800">
+                                    ⏱ {(workflow.timer || 0).toFixed(1)}s / ~15.5s
+                                </span>
+                            )}
+                        </div>
+
+                        <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                            Autonomous AI Incident Detection & Self-Healing Pipeline
+                        </h2>
+                        <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                            Single automated demonstration: Injects failure on Server-01 &rarr; Isolation Forest detects anomaly &rarr; Random Forest predicts failure &rarr; RCA identifies root cause &rarr; Incident created &rarr; Autonomous healing executes &rarr; Telemetry normalizes &rarr; Recovery history logged.
+                        </p>
+                    </div>
+
+                    {/* Action Controls */}
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                        <button
+                            onClick={onStartWorkflow}
+                            disabled={isRunning}
+                            className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-lg ${
+                                isRunning
+                                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                                    : 'bg-gradient-to-r from-rose-500 via-amber-600 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white shadow-rose-500/25 active:scale-95'
+                            }`}
+                        >
+                            <i className={`fas ${isRunning ? 'fa-spinner fa-spin' : 'fa-bolt'}`} />
+                            <span>{isRunning ? 'Demonstration Running...' : isCompleted ? 'Re-run Incident Demo' : 'Simulate Failure (Run Demo)'}</span>
+                        </button>
+
+                        <button
+                            onClick={onResetWorkflow}
+                            className="px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-semibold text-xs transition-all flex items-center gap-1.5 active:scale-95"
+                            title="Reset all failure states, incidents, and restore telemetry to healthy normal"
+                        >
+                            <i className="fas fa-undo-alt text-slate-400" />
+                            <span>Reset Demo</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Progress Bar & Percentage */}
+                <div className="py-4">
+                    <div className="flex items-center justify-between text-xs mb-1.5 font-mono">
+                        <span className="text-slate-400 text-[11px] font-sans">
+                            {isRunning ? 'Autonomous Pipeline Execution in Progress...' : isCompleted ? 'All 8 Response Stages Completed Successfully' : 'Awaiting Demonstration Trigger'}
+                        </span>
+                        <span className={`font-bold ${isCompleted ? 'text-emerald-400' : isRunning ? 'text-cyan-400' : 'text-slate-500'}`}>
+                            {Math.round(progress)}%
+                        </span>
+                    </div>
+                    <div className="w-full bg-slate-900/90 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-800">
+                        <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                                isCompleted
+                                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-400 shadow-sm shadow-emerald-500/50'
+                                    : isRunning
+                                    ? 'bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 shadow-sm shadow-cyan-500/50 animate-pulse'
+                                    : 'bg-slate-700'
+                            }`}
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
+                </div>
+
+                {/* Stages Cards Grid (8 Sequential Stages) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                    {stages.map((stage, idx) => {
+                        const status = stage.status || 'WAITING';
+                        const isStageRunning = status === 'RUNNING';
+                        const isStageDone = status === 'COMPLETED';
+                        const isStageFailed = status === 'FAILED';
+
+                        return (
+                            <div
+                                key={stage.id || idx}
+                                className={`p-3.5 rounded-2xl border transition-all duration-300 relative flex flex-col justify-between ${
+                                    isStageDone
+                                        ? 'bg-emerald-950/20 border-emerald-500/40 text-slate-100 shadow-sm shadow-emerald-500/5'
+                                        : isStageRunning
+                                        ? 'bg-cyan-950/30 border-cyan-400 shadow-lg shadow-cyan-500/20 glow-pulse-cyan'
+                                        : isStageFailed
+                                        ? 'bg-rose-950/30 border-rose-500 text-rose-200'
+                                        : 'bg-slate-900/50 border-slate-800/80 text-slate-400'
+                                }`}
+                            >
+                                <div>
+                                    {/* Stage Top Badge & Status Icon */}
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <span className="text-[10px] font-mono text-slate-500 font-bold">
+                                            0{idx + 1}
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            {stage.model && (
+                                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-semibold ${
+                                                    isStageDone ? 'bg-emerald-500/15 text-emerald-300' : isStageRunning ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800 text-slate-500'
+                                                }`}>
+                                                    {stage.model}
+                                                </span>
+                                            )}
+                                            {isStageDone ? (
+                                                <i className="fas fa-check-circle text-emerald-400 text-xs" />
+                                            ) : isStageRunning ? (
+                                                <i className="fas fa-circle-notch fa-spin text-cyan-400 text-xs" />
+                                            ) : isStageFailed ? (
+                                                <i className="fas fa-times-circle text-rose-400 text-xs" />
+                                            ) : (
+                                                <i className="far fa-circle text-slate-700 text-xs" />
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Stage Title */}
+                                    <h4 className={`text-xs font-bold ${
+                                        isStageDone ? 'text-white' : isStageRunning ? 'text-cyan-300 font-extrabold' : 'text-slate-300'
+                                    }`}>
+                                        {stage.title}
+                                    </h4>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                                        {stage.subtitle}
+                                    </p>
+                                </div>
+
+                                {/* Dynamic Details Box */}
+                                <div className="mt-3 pt-2 border-t border-slate-800/60">
+                                    <div className="flex items-center justify-between text-[9px] font-mono">
+                                        <span className="text-slate-500 uppercase tracking-wider">STATE</span>
+                                        <span className={`font-bold ${
+                                            isStageDone ? 'text-emerald-400' : isStageRunning ? 'text-cyan-400 animate-pulse' : isStageFailed ? 'text-rose-400' : 'text-slate-600'
+                                        }`}>
+                                            {status}
+                                        </span>
+                                    </div>
+                                    {stage.details && (
+                                        <div className={`mt-1.5 p-2 rounded-lg text-[10px] font-mono leading-tight ${
+                                            isStageDone ? 'bg-slate-900/90 text-emerald-300 border border-emerald-500/20' : 'bg-slate-900/90 text-cyan-300 border border-cyan-500/20'
+                                        }`}>
+                                            {stage.details}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Error Banner & Retry Workflow Button */}
+                {workflow.error && (
+                    <div className="mt-4 p-4 rounded-2xl bg-rose-950/60 border border-rose-500/60 flex items-center justify-between gap-4 animate-fade-in">
+                        <div className="flex items-center gap-3 text-xs text-rose-200">
+                            <i className="fas fa-exclamation-triangle text-rose-400 text-base" />
+                            <div>
+                                <span className="font-bold">Workflow Interrupted at Stage:</span> {workflow.failedStage || 'Unknown'}
+                                <p className="text-[11px] text-rose-300/80 mt-0.5">{workflow.error}</p>
+                            </div>
+                        </div>
+                        {onRetryWorkflow && (
+                            <button
+                                onClick={onRetryWorkflow}
+                                className="px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-all flex items-center gap-1.5 shrink-0"
+                            >
+                                <i className="fas fa-redo text-xs" />
+                                Retry Workflow
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     return {
         formatTime,
         StatusBadge,
@@ -518,6 +820,8 @@ window.AutoOpsComponents = (() => {
         FaultModal,
         EmptyState,
         LoadingState,
-        ErrorState
+        ErrorState,
+        ToastNotification,
+        AutomatedWorkflowPanel
     };
 })();

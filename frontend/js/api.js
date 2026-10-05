@@ -72,6 +72,20 @@ window.AutoOpsAPI = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ speed: parseFloat(speed) })
+        }).then(handleResponse),
+        startWorkflow: (serverId = 'Server-01', faultType = 'cpu_spike') => fetch(`${API_BASE}/api/simulation/workflow/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ server_id: serverId, fault_type: faultType })
+        }).then(handleResponse),
+        stepWorkflow: (step, payload = {}) => fetch(`${API_BASE}/api/simulation/workflow/step`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ step, ...payload })
+        }).then(handleResponse),
+        resetWorkflow: () => fetch(`${API_BASE}/api/simulation/workflow/reset`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
         }).then(handleResponse)
     },
 

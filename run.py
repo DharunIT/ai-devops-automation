@@ -15,8 +15,21 @@ def start_browser(port):
     except Exception as e:
         print(f"Browser launch skipped: {e}")
 
+import socket
+
+def find_available_port(default_port=5000):
+    if 'PORT' in os.environ:
+        return int(os.environ['PORT'])
+    port = default_port
+    while port < default_port + 100:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', port)) != 0:
+                return port
+        port += 1
+    return default_port
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = find_available_port(5000)
     print(f"=== INITIALIZING AUTOOPS AI PLATFORM (PORT {port}) ===")
     
     # Import the app module

@@ -4,7 +4,7 @@
  */
 
 window.AutoOpsOverview = (() => {
-    const { MetricCard, StatusBadge, ServerCard, IncidentCard, ChartCard, AgentVisualization } = window.AutoOpsComponents;
+    const { MetricCard, StatusBadge, ServerCard, IncidentCard, ChartCard, AgentVisualization, AutomatedWorkflowPanel } = window.AutoOpsComponents;
 
     function OverviewPage({
         status,
@@ -16,7 +16,11 @@ window.AutoOpsOverview = (() => {
         onNavigate,
         onOpenFaultModal,
         onResolveIncident,
-        onTriggerPipeline
+        onTriggerPipeline,
+        workflow,
+        onStartWorkflow,
+        onResetWorkflow,
+        onRetryWorkflow
     }) {
         const chartRef = React.useRef(null);
         const chartInstance = React.useRef(null);
@@ -190,8 +194,11 @@ window.AutoOpsOverview = (() => {
                         {/* Quick action buttons */}
                         <div className="flex flex-wrap items-center gap-2.5">
                             <button
-                                onClick={onOpenFaultModal}
-                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-600 hover:from-rose-600 hover:to-amber-700 text-white font-semibold text-xs transition-all flex items-center gap-2 shadow-lg shadow-rose-500/20"
+                                onClick={() => {
+                                    if (onStartWorkflow) onStartWorkflow();
+                                    else if (onOpenFaultModal) onOpenFaultModal();
+                                }}
+                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-600 hover:from-rose-600 hover:to-amber-700 text-white font-semibold text-xs transition-all flex items-center gap-2 shadow-lg shadow-rose-500/20 active:scale-95"
                             >
                                 <i className="fas fa-bolt" />
                                 Simulate Failure
@@ -213,6 +220,14 @@ window.AutoOpsOverview = (() => {
                         </div>
                     </div>
                 </div>
+
+                {/* Automated AI Incident Response Workflow Panel */}
+                <AutomatedWorkflowPanel
+                    workflow={workflow}
+                    onStartWorkflow={onStartWorkflow}
+                    onResetWorkflow={onResetWorkflow}
+                    onRetryWorkflow={onRetryWorkflow}
+                />
 
                 {/* 2. Command Center 6 Key Metric Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
